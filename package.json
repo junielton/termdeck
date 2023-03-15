@@ -1,0 +1,59 @@
+{
+  "name": "termdeck",
+  "version": "0.1.0",
+  "description": "Stream Deck-like command launcher for terminal contexts (Electron + Vue)",
+  "license": "MIT",
+  "main": "dist/main/main.cjs",
+  "bin": {
+    "termdeck": "bin/termdeck.js"
+  },
+  "scripts": {
+    "predev": "tsc -p tsconfig.main.json",
+    "dev": "concurrently -c blue,magenta,green -n VITE,TS,ELECTRON \"vite --config vite.renderer.config.mjs\" \"tsc -p tsconfig.main.json --watch\" \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron . --noSandbox\"",
+    "build:renderer": "vite build --config vite.renderer.config.mjs",
+    "build:main": "tsc -p tsconfig.main.json && cp dist/main/main.js dist/main/main.cjs && cp dist/main/preload.js dist/main/preload.cjs",
+    "build": "npm run build:renderer && npm run build:main",
+    "lint": "eslint . --ext .ts,.tsx,.vue",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "LICENSE",
+    "README.md",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "electron": "^30.0.0",
+    "lucide-vue-next": "^0.460.0",
+    "uuid": "^9.0.1",
+    "vue": "^3.4.0",
+    "vue-i18n": "^9.9.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vitejs/plugin-vue": "^5.0.4",
+  "@intlify/unplugin-vue-i18n": "^4.0.0",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.21.1",
+    "postcss": "^8.4.41",
+    "prettier": "^3.3.3",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vitest": "^1.5.0"
+  }
+}
