@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>termdeck</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws:;">
+  <!-- NOTE: Avoid loading remote web fonts (e.g., Google Fonts) due to CSP. Use system stack in tailwind.css -->
+</head>
+<body class="dark:bg-neutral-900 dark:text-neutral-100">
+  <div id="app"></div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
