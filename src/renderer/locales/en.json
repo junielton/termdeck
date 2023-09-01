@@ -1,0 +1,16 @@
+{
+  "app": { "title": "termdeck (MVP)" },
+  "actions": {
+    "addButton": "Add Button", "run": "Run", "stop": "Stop", "edit": "Edit", "delete": "Delete", "deleteShort": "Del", "cancel": "Cancel", "save": "Save", "saving": "Saving...", "clear": "Clear", "copy": "Copy"
+  },
+  "profile": { "label": "Profile", "new": "New Profile", "rename": "Rename", "delete": "Delete Profile", "deleteConfirm": "Delete current profile?", "renamePrompt": "New profile name" },
+  "logs": { "title": "Logs", "empty": "(no output)", "selectPrompt": "Select a button to view its log." },
+  "logUI": { "autoFollow": "Auto-scroll", "scrollBottom": "Scroll to bottom", "timestamp": "Timestamp", "bufferSize": "Buffer" },
+  "modal": { "editTitle": "Edit Button" },
+  "form": { "label": "Label", "command": "Command", "color": "Color", "confirm": "Confirm", "timeout": "Timeout (ms)", "icon": "Icon (Lucide)" },
+  "confirm": { "deleteButton": "Delete this button?", "runDanger": "Confirm execution?" },
+  "danger": { "details": "Command", "cancel": "Cancel", "execute": "Execute" },
+  "concurrency": { "label": "Concurrency" },
+  "concurrencyMsg": { "blocked": "(blocked by concurrency policy)" },
+  "layout": { "orientation": "Layout", "vertical": "Vertical", "horizontal": "Horizontal" }
+}

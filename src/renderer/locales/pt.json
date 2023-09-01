@@ -1,0 +1,16 @@
+{
+  "app": { "title": "termdeck (MVP)" },
+  "actions": {
+    "addButton": "Adicionar", "run": "Executar", "stop": "Parar", "edit": "Editar", "delete": "Excluir", "deleteShort": "Del", "cancel": "Cancelar", "save": "Salvar", "saving": "Salvando...", "clear": "Limpar", "copy": "Copiar"
+  },
+  "profile": { "label": "Perfil", "new": "Novo Perfil", "rename": "Renomear", "delete": "Excluir Perfil", "deleteConfirm": "Excluir perfil atual?", "renamePrompt": "Novo nome do perfil" },
+  "logs": { "title": "Logs", "empty": "(sem saída)", "selectPrompt": "Selecione um botão para ver o log." },
+  "logUI": { "autoFollow": "Auto-scroll", "scrollBottom": "Ir para o fim", "timestamp": "Timestamp", "bufferSize": "Buffer" },
+  "modal": { "editTitle": "Editar Botão" },
+  "form": { "label": "Rótulo", "command": "Comando", "color": "Cor", "confirm": "Confirmar", "timeout": "Timeout (ms)", "icon": "Ícone (Lucide)" },
+  "confirm": { "deleteButton": "Remover este botão?", "runDanger": "Confirmar execução?" },
+  "danger": { "details": "Comando", "cancel": "Cancelar", "execute": "Executar" },
+  "concurrency": { "label": "Concorrência" },
+  "concurrencyMsg": { "blocked": "(bloqueado pela política de concorrência)" },
+  "layout": { "orientation": "Layout", "vertical": "Vertical", "horizontal": "Horizontal" }
+}
