@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.shared.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "module": "CommonJS",
+    "target": "ES2020",
+    "types": ["node"],
+    "moduleResolution": "Node",
+    "allowJs": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/utils/**/*.ts", "src/server/**/*.ts", "src/api/**/*.ts", "src/types/**/*.ts"]
+}

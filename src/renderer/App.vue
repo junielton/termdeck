@@ -1,5 +1,13 @@
 <template>
   <div class="h-screen overflow-hidden flex flex-col bg-neutral-950 text-neutral-200">
+    <!-- Toast Container -->
+    <div class="fixed top-3 right-3 z-[200] flex flex-col gap-2 w-64" v-if="toasts.length">
+      <div v-for="t in toasts" :key="t.id" :class="['rounded-md shadow border px-3 py-2 text-xs leading-snug backdrop-blur-sm', t.failed ? 'border-red-500/50 bg-red-900/40 text-red-200' : 'border-blue-500/40 bg-neutral-800/70 text-neutral-200']">
+        <div class="font-semibold truncate mb-1" :title="t.title">{{ t.title }}</div>
+        <div class="text-[11px] opacity-80 break-all" :title="t.body">{{ t.body }}</div>
+        <button class="mt-2 text-[10px] uppercase tracking-wide font-medium text-blue-300 hover:text-blue-200" @click="focusApp(t.buttonId)">Ver</button>
+      </div>
+    </div>
     <!-- Top Bar -->
     <header class="h-12 flex items-center justify-between px-4 border-b border-neutral-800 bg-neutral-900/60 backdrop-blur-sm">
       <div class="flex items-center gap-4">
@@ -39,7 +47,14 @@
       <div v-if="!isElectron" class="p-6 text-xs text-amber-400">
         termdeck dev server aberto no navegador. Abra via CLI (termdeck) para usar a API Electron.
       </div>
-      <div v-else-if="!state" class="p-6 text-sm">Loading...</div>
+      <div v-else-if="!state" class="flex-1 flex items-center justify-center">
+        <div class="flex flex-col items-center gap-4 text-neutral-400 animate-pulse">
+          <div class="h-10 w-10 relative">
+            <div class="absolute inset-0 rounded-full border-4 border-neutral-700 border-t-blue-500 animate-spin"></div>
+          </div>
+          <div class="text-xs tracking-wider uppercase">Carregando perfis...</div>
+        </div>
+      </div>
     <template v-else>
   <!-- VERTICAL ORIENTATION (log at right) -->
   <div v-if="isVertical" class="flex flex-1 min-h-0 overflow-hidden">
@@ -240,6 +255,13 @@
           <label class="block text-xs uppercase tracking-wide text-neutral-400">{{ t('form.timeout') }}
             <input type="number" min="0" v-model.number="editForm.timeoutMs" class="mt-1 w-full px-2 py-1 rounded bg-neutral-800 border border-neutral-600 focus:outline-none focus:border-blue-500" />
           </label>
+          <label class="block text-xs uppercase tracking-wide text-neutral-400">{{ t('form.notifyOn') }}
+            <select v-model="editForm.notifyOn" class="mt-1 w-full px-2 py-1 rounded bg-neutral-800 border border-neutral-600 focus:outline-none focus:border-blue-500">
+              <option value="off">{{ t('notify.off') }}</option>
+              <option value="fail">{{ t('notify.fail') }}</option>
+              <option value="always">{{ t('notify.always') }}</option>
+            </select>
+          </label>
           <div class="flex gap-2">
             <label class="flex-1 block text-xs uppercase tracking-wide text-neutral-400">{{ t('form.icon') }}
               <div class="relative mt-1">
@@ -259,6 +281,30 @@
         <div class="flex justify-end gap-2 pt-1">
           <button class="btn-secondary" @click="closeEdit" :disabled="saving">{{ t('actions.cancel') }}</button>
           <button class="btn-primary" @click="saveEdit" :disabled="saving">{{ saving ? t('actions.saving') : t('actions.save') }}</button>
+        </div>
+      </div>
+    </div>
+    <!-- Interactive Prompt Modal -->
+    <div v-if="promptModal.open" class="fixed inset-0 flex items-center justify-center bg-black/70 z-[60]">
+      <div class="bg-neutral-900/95 border border-neutral-700 rounded-xl p-5 w-full max-w-sm space-y-4 shadow-2xl backdrop-blur">
+        <h2 class="text-sm font-semibold flex items-center gap-2">
+          <span class="px-2 py-[2px] rounded bg-blue-600/40 text-blue-200 text-[10px] uppercase tracking-wide">Prompt</span>
+          <span class="truncate" :title="promptModal.buttonLabel">{{ promptModal.buttonLabel }}</span>
+        </h2>
+        <div class="text-[12px] font-mono whitespace-pre-wrap break-all text-neutral-300 bg-neutral-800/60 rounded p-2 max-h-32 overflow-auto">
+          {{ promptModal.text }}
+        </div>
+        <div>
+          <label class="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">{{ promptModal.type === 'password' ? 'Password' : 'Input' }}</label>
+          <input :type="promptModal.type === 'password' ? 'password' : 'text'" v-model="promptModal.value" @keydown.enter.prevent="submitPrompt" class="w-full px-2 py-1 rounded bg-neutral-800 border border-neutral-600 focus:outline-none focus:border-blue-500" autofocus />
+        </div>
+        <div class="flex justify-between items-center text-[11px] text-neutral-500">
+          <span v-if="promptModal.error" class="text-red-400">{{ promptModal.error }}</span>
+          <span class="ml-auto" v-if="promptModal.sending">{{ t('actions.saving') }}...</span>
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <button class="btn-secondary" @click="cancelPrompt" :disabled="promptModal.sending">{{ t('actions.cancel') }}</button>
+          <button class="btn-primary" @click="submitPrompt" :disabled="promptModal.sending || !promptModal.value.length">Enviar</button>
         </div>
       </div>
     </div>
@@ -302,8 +348,58 @@ let globalLogSeq = 0;
 const editing = ref(false);
 const saving = ref(false);
 const editTarget = ref<any>(null);
-const editForm = ref({ label: '', command: '', color: '#222', confirm: false as boolean | undefined, timeoutMs: 0, iconName: '' });
+const editForm = ref({ label: '', command: '', color: '#222', confirm: false as boolean | undefined, timeoutMs: 0, notifyOn: 'off' as 'off'|'fail'|'always', iconName: '' });
+// Interactive prompt modal state
+const promptModal = ref<{ open: boolean; buttonId: string | null; buttonLabel: string; type: 'input' | 'password'; text: string; value: string; sending: boolean; error: string | null }>({
+  open: false,
+  buttonId: null,
+  buttonLabel: '',
+  type: 'input',
+  text: '',
+  value: '',
+  sending: false,
+  error: null
+});
 const runSubscriptions: Record<string, () => void> = {};
+// Toasts (fallback notifications)
+const toasts = ref<{ id: number; title: string; body: string; failed: boolean; buttonId: string }[]>([]);
+let toastSeq = 0;
+let audioCtx: AudioContext | null = null;
+function ensureAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+  return audioCtx;
+}
+function playToastSound(failed: boolean) {
+  try {
+    const ctx = ensureAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    // Different pitch for success vs fail
+    osc.frequency.value = failed ? 340 : 540;
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.35, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.45);
+  } catch { /* ignore audio errors */ }
+}
+function pushToast(t: { title: string; body: string; failed: boolean; buttonId: string }) {
+  const id = ++toastSeq;
+  toasts.value.push({ id, ...t });
+  playToastSound(t.failed);
+  setTimeout(() => { toasts.value = toasts.value.filter(x => x.id !== id); }, 6000);
+}
+function focusApp(buttonId: string) {
+  // Just select the button & switch to its log for now
+  if (buttonId) {
+    selectedButtonId.value = buttonId;
+    activeLogView.value = 'button';
+  }
+}
 const creatingNew = ref(false);
 const menuOpen = ref<string | null>(null);
 function toggleMenu(id: string) { menuOpen.value = menuOpen.value === id ? null : id; }
@@ -413,12 +509,36 @@ onMounted(async () => {
   } catch (e) {
     console.error('[termdeck] Failed to load initial state:', e);
   }
+  // Subscribe to interactive prompt events
+  if (isElectron) {
+    const onPromptFn: any = (window as any).termdeck?.onPrompt;
+    if (typeof onPromptFn === 'function') {
+      onPromptFn((p: any) => {
+        promptModal.value.open = true;
+        promptModal.value.buttonId = p.buttonId;
+        promptModal.value.buttonLabel = p.buttonLabel;
+        promptModal.value.type = p.type;
+        promptModal.value.text = p.text;
+        promptModal.value.value = '';
+        promptModal.value.sending = false;
+        promptModal.value.error = null;
+      });
+    } else {
+      console.warn('[termdeck] onPrompt API ausente. Reinicie o processo Electron para carregar o preload atualizado.');
+    }
+    const notifyFallbackFn: any = (window as any).termdeck?.onNotifyFallback;
+    if (typeof notifyFallbackFn === 'function') {
+      notifyFallbackFn((n: any) => {
+        pushToast({ title: n.title, body: n.body, failed: n.failed, buttonId: n.buttonId });
+      });
+    }
+  }
 });
 
 function openCreateModal() {
   creatingNew.value = true;
   editTarget.value = null;
-  editForm.value = { label: '', command: '', color: '#4f46e5', confirm: false, timeoutMs: 0, iconName: '' };
+  editForm.value = { label: '', command: '', color: '#4f46e5', confirm: false, timeoutMs: 0, notifyOn: 'off', iconName: '' };
   editing.value = true;
 }
 
@@ -584,6 +704,7 @@ function openEdit(btn: any) {
     color: btn.color || '#222',
     confirm: btn.confirm || false,
     timeoutMs: btn.timeoutMs || 0,
+    notifyOn: btn.notifyOn || 'off',
     iconName: btn.icon?.name || ''
   };
   editing.value = true;
@@ -616,6 +737,28 @@ function saveEdit() {
       .finally(() => { saving.value = false; });
   } else {
     saving.value = false;
+  }
+}
+// Prompt handlers
+function cancelPrompt() {
+  promptModal.value.open = false;
+  promptModal.value.buttonId = null;
+}
+async function submitPrompt() {
+  if (!promptModal.value.buttonId) return;
+  promptModal.value.sending = true; promptModal.value.error = null;
+  try {
+    const res = await window.termdeck.sendInput(promptModal.value.buttonId, promptModal.value.value);
+    if (!res.sent) {
+      promptModal.value.error = res.error || res.reason || 'Failed';
+      promptModal.value.sending = false;
+      return;
+    }
+    promptModal.value.open = false;
+    promptModal.value.buttonId = null;
+  } catch (e: any) {
+    promptModal.value.error = e?.message || 'Error';
+    promptModal.value.sending = false;
   }
 }
 
@@ -774,35 +917,45 @@ function rgb(r:number,g:number,b:number){ return '#' + [r,g,b].map(x=>x.toString
 </script>
 
 <style>
-/* Utility style enhancements */
-.btn-accent { @apply text-xs px-3 h-7 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-medium tracking-wide transition; }
-.select-ghost { @apply bg-neutral-800/60 border border-neutral-700 rounded-md text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none; }
-.dropdown-panel { @apply absolute z-40 mt-2 right-0 w-44 bg-neutral-900 border border-neutral-700 rounded-md shadow-lg p-1 flex flex-col gap-1; }
-.dropdown-panel .item { @apply text-left text-xs px-2 py-1 rounded hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed; }
-.mini-btn { @apply text-[10px] px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 transition disabled:opacity-40; }
-.btn-secondary { @apply px-3 py-1 text-sm rounded-md bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 transition; }
-.btn-primary { @apply px-3 py-1 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 transition; }
-.card-actions { @apply absolute bottom-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition; }
-.card-actions .act { @apply h-6 w-6 flex items-center justify-center rounded text-[11px] font-semibold text-neutral-100 bg-neutral-700/80 hover:bg-neutral-600/80 disabled:opacity-40; }
-.card-actions .act.blue { @apply bg-blue-600 hover:bg-blue-500; }
-.card-actions .act.green { @apply bg-emerald-600 hover:bg-emerald-500; }
-.card-actions .act.amber { @apply bg-amber-600 hover:bg-amber-500; }
-.card-actions .act.red { @apply bg-red-600 hover:bg-red-500; }
-
-/* Deck button sizing (flex wrap layout) */
-.deck-button { @apply w-40 h-32 p-3; }
-
-/* Resizable log panel */
-.resize-handle { @apply w-1 cursor-col-resize bg-neutral-800 hover:bg-neutral-600 transition-colors; }
-.resize-handle:hover { @apply bg-neutral-600; }
-.resize-handle:active { @apply bg-blue-600; }
-.resize-handle-h { @apply h-1 cursor-row-resize bg-neutral-800 hover:bg-neutral-600 transition-colors; }
-.resize-handle-h:hover { @apply bg-neutral-600; }
-.resize-handle-h:active { @apply bg-blue-600; }
-
-/* Scrollbar minimal */
-.log-scroll::-webkit-scrollbar { width: 8px; }
-.log-scroll::-webkit-scrollbar-track { background: transparent; }
-.log-scroll::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
-.log-scroll::-webkit-scrollbar-thumb:hover { background: #52525b; }
+/* Minimal fallback styles (avoiding @apply for environments where it is not processed here) */
+.btn-accent { font-size:12px; padding:0 0.75rem; height:1.75rem; border-radius:0.375rem; background:#2563eb; color:#fff; font-weight:500; letter-spacing:.03em; transition:.15s background; }
+.btn-accent:hover { background:#3b82f6; }
+.select-ghost { background:rgba(31,31,35,0.6); border:1px solid #404040; border-radius:0.375rem; font-size:12px; padding:0.25rem 0.5rem; }
+.dropdown-panel { position:absolute; z-index:40; margin-top:0.5rem; right:0; width:11rem; background:#111827; border:1px solid #404040; border-radius:0.375rem; box-shadow:0 4px 16px rgba(0,0,0,.4); padding:0.25rem; display:flex; flex-direction:column; gap:0.25rem; }
+.dropdown-panel .item { text-align:left; font-size:12px; padding:0.25rem 0.5rem; border-radius:0.25rem; }
+.dropdown-panel .item:hover { background:#374151; }
+.dropdown-panel .item:disabled { opacity:.4; cursor:not-allowed; }
+.mini-btn { font-size:10px; padding:2px 0.5rem; border-radius:0.375rem; background:#3f3f46; transition:.15s background; }
+.mini-btn:hover { background:#52525b; }
+.mini-btn:disabled { opacity:.4; }
+.btn-secondary { padding:0.25rem 0.75rem; font-size:0.875rem; border-radius:0.375rem; background:#3f3f46; transition:.15s background; }
+.btn-secondary:hover { background:#52525b; }
+.btn-secondary:disabled { opacity:.5; }
+.btn-primary { padding:0.25rem 0.75rem; font-size:0.875rem; border-radius:0.375rem; background:#2563eb; color:#fff; transition:.15s background; }
+.btn-primary:hover { background:#3b82f6; }
+.btn-primary:disabled { opacity:.5; }
+.card-actions { position:absolute; bottom:0.25rem; right:0.25rem; display:flex; gap:0.25rem; opacity:0; transition:.15s opacity; }
+.group:hover .card-actions { opacity:1; }
+.card-actions .act { height:1.5rem; width:1.5rem; display:flex; align-items:center; justify-content:center; border-radius:0.375rem; font-size:11px; font-weight:600; color:#f5f5f5; background:rgba(64,64,64,.8); }
+.card-actions .act:hover { background:rgba(82,82,82,.8); }
+.card-actions .act:disabled { opacity:.4; }
+.card-actions .act.blue { background:#2563eb; }
+.card-actions .act.blue:hover { background:#3b82f6; }
+.card-actions .act.green { background:#059669; }
+.card-actions .act.green:hover { background:#10b981; }
+.card-actions .act.amber { background:#d97706; }
+.card-actions .act.amber:hover { background:#f59e0b; }
+.card-actions .act.red { background:#dc2626; }
+.card-actions .act.red:hover { background:#ef4444; }
+.deck-button { width:10rem; height:8rem; padding:0.75rem; }
+.resize-handle { width:4px; cursor:col-resize; background:#27272a; transition:.15s background; }
+.resize-handle:hover { background:#52525b; }
+.resize-handle:active { background:#2563eb; }
+.resize-handle-h { height:4px; cursor:row-resize; background:#27272a; transition:.15s background; }
+.resize-handle-h:hover { background:#52525b; }
+.resize-handle-h:active { background:#2563eb; }
+.log-scroll::-webkit-scrollbar { width:8px; }
+.log-scroll::-webkit-scrollbar-track { background:transparent; }
+.log-scroll::-webkit-scrollbar-thumb { background:#3f3f46; border-radius:4px; }
+.log-scroll::-webkit-scrollbar-thumb:hover { background:#52525b; }
 </style>

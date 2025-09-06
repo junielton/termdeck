@@ -8,7 +8,22 @@
   <!-- NOTE: Avoid loading remote web fonts (e.g., Google Fonts) due to CSP. Use system stack in tailwind.css -->
 </head>
 <body class="dark:bg-neutral-900 dark:text-neutral-100">
-  <div id="app"></div>
+  <!-- Initial loader (shown until Vue mounts). Keeps user from seeing blank screen -->
+  <div id="app">
+    <div id="initial-loader" style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+      <div style="text-align:center;display:flex;flex-direction:column;gap:16px;align-items:center;color:#d4d4d8;">
+        <div style="width:54px;height:54px;position:relative;">
+          <div style="box-sizing:border-box;position:absolute;inset:0;border:5px solid #3f3f46;border-top-color:#6366f1;border-radius:50%;animation:tdk-spin 0.9s linear infinite"></div>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:.05em;color:#818cf8;font-weight:600;">TD</div>
+        </div>
+        <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;">Carregando termdeck...</div>
+        <noscript style="color:#f87171;font-size:12px;">JavaScript necessário</noscript>
+      </div>
+    </div>
+  </div>
+  <style>
+    @keyframes tdk-spin { to { transform: rotate(360deg); } }
+  </style>
   <script type="module" src="./main.ts"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Stream Deck-like command launcher for terminal contexts (Electron + Vue)",
   "license": "MIT",
-  "main": "dist/main/main.cjs",
+  "main": "dist/main/main.js",
   "bin": {
     "termdeck": "bin/termdeck.js"
   },
@@ -11,11 +11,14 @@
     "predev": "tsc -p tsconfig.main.json",
     "dev": "concurrently -c blue,magenta,green -n VITE,TS,ELECTRON \"vite --config vite.renderer.config.mjs\" \"tsc -p tsconfig.main.json --watch\" \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron . --noSandbox\"",
     "build:renderer": "vite build --config vite.renderer.config.mjs",
-    "build:main": "tsc -p tsconfig.main.json && cp dist/main/main.js dist/main/main.cjs && cp dist/main/preload.js dist/main/preload.cjs",
-    "build": "npm run build:renderer && npm run build:main",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:utils": "tsc -p tsconfig.utils.json",
+    "build": "npm run build:renderer && npm run build:main && npm run build:utils",
+    "server": "node dist/server/api.js",
     "lint": "eslint . --ext .ts,.tsx,.vue",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:env": "node scripts/test-environment.mjs",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },
@@ -30,20 +33,26 @@
     "access": "public"
   },
   "dependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "cors": "^2.8.5",
     "electron": "^30.0.0",
+    "express": "^5.1.0",
     "lucide-vue-next": "^0.460.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "uuid": "^9.0.1",
     "vue": "^3.4.0",
     "vue-i18n": "^9.9.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@intlify/unplugin-vue-i18n": "^4.0.0",
     "@types/node": "^20.11.0",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vitejs/plugin-vue": "^5.0.4",
-  "@intlify/unplugin-vue-i18n": "^4.0.0",
     "autoprefixer": "^10.4.20",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0.3",

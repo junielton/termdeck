@@ -1,6 +1,301 @@
-# termdeck
+# TermDeck
 
-Stream Deck-like launcher for terminal commands (Electron + Vue + Tailwind). **MVP em evolução** com foco em produtividade para fluxos de desenvolvimento.
+Stream Deck-like command launcher for terminal contexts. A modern Electron application with Vue.js frontend that provides a visual interface for running terminal commands with button-based controls.
+
+## ✨ Features
+
+### Core Functionality
+- **🎮 Stream Deck Interface**: Visual grid of customizable command buttons
+- **📁 Per-Directory Profiles**: Automatic profile switching based on current directory
+- **⚡ Command Execution**: Run shell commands with real-time output streaming
+- **🔄 Concurrency Control**: Configure how commands run (parallel, single-per-button, single-global)
+- **📝 Interactive Prompts**: Handle stdin input/password prompts with modal dialogs
+- **🔔 Notifications**: Optional notifications on command completion (native + fallback)
+- **🌍 Internationalization**: Multi-language support (English, Portuguese)
+
+### Advanced Features
+- **🎨 Customization**: Button colors, icons (Lucide icon pack), and labels
+- **📋 Drag & Drop**: Reorder buttons with intuitive drag and drop
+- **🔍 Icon Search**: Autocomplete icon picker with 1000+ Lucide icons
+- **📊 Real-time Logs**: Sidebar log panel with ANSI color support and timestamps
+- **⚙️ Flexible Layout**: Horizontal/vertical log panel orientation
+- **💾 Persistent Settings**: UI preferences saved across sessions
+- **📜 Command History**: Buffer controls and auto-scroll for log management
+
+### Cross-Platform Architecture
+- **🖥️ Native Mode**: Standard Electron app for local terminal commands
+- **🔗 Client-Server Mode**: WSL/Windows split architecture (like VS Code)
+  - Electron client runs on Windows
+  - API server runs in WSL for Linux command execution
+  - Automatic environment detection and server management
+- **🔧 Server Mode**: Standalone API server for headless operation
+
+### Script Management (Planned)
+- **📜 Script Library**: Save and organize reusable command scripts
+- **🔗 Script-Button Linking**: Associate saved scripts with buttons
+- **📝 Parameterized Execution**: Pass parameters to commands via modal forms
+- **🎯 Dynamic Parameters**: Configure buttons to prompt for parameters before execution
+
+## 🚀 Installation
+
+### Global Installation
+```bash
+npm install -g termdeck
+termdeck
+```
+
+### Local Development
+```bash
+git clone <repository>
+cd termdeck
+npm install
+npm run build
+npm start
+```
+
+### WSL/Windows Setup
+For WSL users who want the VS Code-like experience:
+
+1. **Install on Windows** (recommended):
+   ```cmd
+   npm install -g termdeck
+   termdeck
+   ```
+   The app will auto-detect WSL and start in client mode.
+
+2. **Install in WSL** (for server mode):
+   ```bash
+   npm install -g termdeck
+   termdeck --server
+   ```
+
+## 🎯 Usage
+
+### Basic Usage
+1. **Launch TermDeck**: Run `termdeck` from any directory
+2. **Add Buttons**: Click the "+" button to create command buttons
+3. **Configure Commands**: Set label, command, icon, and notification preferences
+4. **Run Commands**: Click buttons to execute commands and view real-time output
+
+### Profile Management
+- **Auto-switching**: Profiles automatically switch based on current directory
+- **Manual Creation**: Create profiles for specific projects or workflows
+- **Button Organization**: Each profile supports customizable grid layouts
+- **Directory Mapping**: Associate profiles with specific directory paths
+
+### Command Configuration
+- **Basic Setup**: Label, command, and working directory
+- **Visual Customization**: Choose from 1000+ Lucide icons and custom colors
+- **Concurrency Control**: Set per-button execution policies
+- **Notifications**: Enable completion notifications (success, error, or both)
+- **Confirmation**: Add confirmation dialogs for destructive commands
+
+### Interactive Commands
+TermDeck automatically detects when commands need input:
+- **Password Prompts**: Secure password input with hidden characters
+- **User Input**: Text input for interactive command prompts
+- **Real-time Detection**: Automatic prompt detection and modal presentation
+
+### Advanced Configuration
+```json
+{
+  "schemaVersion": 1,
+  "activeProfileId": "default",
+  "profiles": [
+    {
+      "id": "default",
+      "name": "Default",
+      "rows": 3,
+      "cols": 5,
+      "buttons": [
+        {
+          "id": "unique-id",
+          "label": "Build Project",
+          "command": "npm run build",
+          "cwd": "/path/to/project",
+          "icon": { "pack": "lucide", "name": "hammer" },
+          "color": "#10b981",
+          "notifyOn": "both",
+          "concurrency": "single-per-button"
+        }
+      ]
+    }
+  ],
+  "concurrencyPolicy": "single-per-button",
+  "locale": "en"
+}
+```
+
+## 🏗️ Architecture
+
+### Client-Server Split (WSL/Windows)
+```
+┌─────────────────┐    HTTP/WebSocket    ┌──────────────────┐
+│   Windows Host  │ ◄─────────────────► │   WSL Instance   │
+│                 │                      │                  │
+│ Electron Client │                      │   API Server     │
+│ (UI + State)    │                      │ (Command Exec)   │
+└─────────────────┘                      └──────────────────┘
+```
+
+**Benefits:**
+- **Native UI**: Full Electron interface on Windows
+- **Linux Context**: Commands execute in authentic Linux environment
+- **Automatic Setup**: Environment detection and server auto-start
+- **Seamless Experience**: Transparent cross-system operation
+
+### API Endpoints (Server Mode)
+- `GET /api/profiles` - List all profiles
+- `POST /api/profiles` - Create new profile
+- `PUT /api/profiles/:id` - Update profile
+- `DELETE /api/profiles/:id` - Delete profile
+- `POST /api/profiles/:id/buttons` - Add button to profile
+- `PUT /api/profiles/:id/buttons/:buttonId` - Update button
+- `DELETE /api/profiles/:id/buttons/:buttonId` - Delete button
+- `POST /api/run` - Execute command
+- `POST /api/stop` - Stop running command
+- `POST /api/input` - Send input to running command
+- `GET /api/state` - Get server state
+
+### WebSocket Events
+- `log` - Real-time command output
+- `commandStarted` - Command execution started
+- `commandEnded` - Command execution finished
+- `promptRequired` - Interactive input needed
+- `notification` - Command completion notification
+
+## 🔧 Configuration
+
+### Environment Variables
+- `TERMDECK_MODE`: Force specific mode (`native`, `client`, `server`)
+- `TERMDECK_PORT`: Server port (default: 3001)
+- `VITE_DEV_SERVER_URL`: Development server URL
+
+### Config File Location
+- **Linux/macOS**: `~/.config/termdeck/deck.json`
+- **Windows**: `%APPDATA%\termdeck\deck.json`
+
+## 🎨 Customization
+
+### Icons
+TermDeck uses the Lucide icon pack with 1000+ icons. Icons are searchable and support autocomplete:
+- Type icon names in the icon picker
+- Preview icons before selection
+- Responsive icon sizing
+
+### Colors
+- **Custom Colors**: Hex color codes for button backgrounds
+- **Theme Support**: Consistent color schemes across UI
+- **Visual Feedback**: Color-coded button states
+
+### Layout Options
+- **Grid Size**: Configure rows and columns per profile
+- **Log Panel**: Toggle between horizontal and vertical layouts
+- **Compact Mode**: Dense button layouts for more commands
+- **Responsive Design**: Adapts to different window sizes
+
+## 🌐 Internationalization
+
+Supported languages:
+- **English** (`en`)
+- **Portuguese** (`pt`)
+
+Add new languages by contributing translation files in `src/renderer/locales/`.
+
+## 🔒 Security
+
+- **Sandbox Safety**: Electron security best practices
+- **CSP Compliance**: Content Security Policy enforcement
+- **Input Validation**: Command injection protection
+- **Process Isolation**: Secure command execution
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+npm test
+
+# Test environment detection
+npm run test:env
+
+# Lint code
+npm run lint
+
+# Type checking
+npm run typecheck
+```
+
+## 📦 Building
+
+```bash
+# Development build
+npm run build
+
+# Production build with optimization
+npm run build:all
+
+# Build specific components
+npm run build:main      # Main process
+npm run build:renderer  # Vue frontend
+npm run build:utils     # Utilities and server
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes and add tests
+4. Commit with conventional commits: `git commit -m "feat: add amazing feature"`
+5. Push to branch: `git push origin feature/amazing-feature`
+6. Open a Pull Request
+
+### Development Guidelines
+- **TypeScript**: Strict type checking required
+- **Vue 3**: Composition API preferred
+- **ESLint**: Follow established linting rules
+- **Testing**: Add tests for new features
+- **Documentation**: Update README for significant changes
+
+## 📝 Roadmap
+
+### Upcoming Features
+- [ ] **Script Library**: Save and manage reusable command scripts
+- [ ] **Parameter Forms**: Dynamic parameter input for commands
+- [ ] **Command Templates**: Pre-configured command templates
+- [ ] **Export/Import**: Profile sharing and backup
+- [ ] **Plugin System**: Extensible architecture for custom functionality
+- [ ] **Cloud Sync**: Profile synchronization across devices
+- [ ] **Advanced Scheduling**: Cron-like command scheduling
+- [ ] **Performance Monitoring**: Command execution analytics
+
+### Platform Support
+- [ ] **macOS**: Native macOS application
+- [ ] **Linux Native**: Direct Linux Electron app
+- [ ] **Docker**: Containerized server mode
+- [ ] **Remote SSH**: Execute commands on remote servers
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Electron**: Cross-platform desktop framework
+- **Vue.js**: Progressive JavaScript framework
+- **Lucide**: Beautiful icon pack
+- **Tailwind CSS**: Utility-first CSS framework
+- **Socket.IO**: Real-time communication
+- **Zod**: TypeScript-first schema validation
+
+## 🐛 Issues & Support
+
+- **Bug Reports**: [GitHub Issues](../../issues)
+- **Feature Requests**: [GitHub Discussions](../../discussions)
+- **Documentation**: [GitHub Wiki](../../wiki)
+
+---
+
+**TermDeck** - Bringing the Stream Deck experience to terminal workflows with modern web technologies.
 
 ---
 
@@ -39,6 +334,7 @@ Stream Deck-like launcher for terminal commands (Electron + Vue + Tailwind). **M
 - Spinner + outline azul ao rodar.
 - Mensagens de bloqueio de concorrência no log.
 - Tratamento de carriage return (mantém atualização final de linhas de progresso).
+ - Notificações por botão (configurável: off / fail / always) ao terminar execução (sucesso, falha ou timeout) focando janela ao clicar.
 
 ### CLI / Dev Experience
 - Bin global `termdeck` (detecta WSL e usa `--no-sandbox` quando necessário).
@@ -76,7 +372,7 @@ Stream Deck-like launcher for terminal commands (Electron + Vue + Tailwind). **M
 - [ ] Tree-shake de ícones (import dinâmico). 
 - [ ] Hotkeys locais (1–9 para disparar botões visíveis) e globais (registrar atalho para focar app).
 - [ ] Testes: config loader, executor, ANSI parser, política de concorrência (unit + smoke e2e).
-- [ ] Notificações por botão ao concluir (sucesso/falha/timeout) configuráveis (off / fail / always).
+- [x] Notificações por botão ao concluir (sucesso/falha/timeout) configuráveis (off / fail / always).
 
 ### Script Library & Parameterized Commands (Novo Pedido)
 - [ ] Biblioteca de scripts reutilizáveis armazenada separadamente (ex: `~/.config/termdeck/scripts/`).

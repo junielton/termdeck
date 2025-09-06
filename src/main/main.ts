@@ -1,40 +1,14 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Notification } from 'electron';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { v4 as uuid } from 'uuid';
 import { z } from 'zod';
+import { DeckButtonCommand, DeckProfile, DeckStateSchemaV1 } from '../types';
+import { detectEnvironment, TDMode } from '../utils/environment';
 
-interface DeckButtonCommand {
-  id: string;
-  label: string;
-  command: string;
-  cwd: string; // directory context
-  icon?: { pack: string; name: string } | null; // icon descriptor
-  color?: string;
-  confirm?: boolean;
-  timeoutMs?: number;
-  readonly?: boolean;
-}
-
-interface DeckProfile {
-  id: string;
-  name: string;
-  rows: number;
-  cols: number;
-  buttons: DeckButtonCommand[]; // up to rows*cols
-  rootDir?: string; // directory associated (optional)
-}
-
-interface DeckStateSchemaV1 {
-  schemaVersion: 1;
-  activeProfileId: string;
-  profiles: DeckProfile[];
-  directoryProfiles?: Record<string, string>; // normalized path -> profileId
-  concurrencyPolicy?: 'parallel' | 'single-per-button' | 'single-global';
-  locale?: string; // persisted UI locale (e.g. 'en', 'pt')
-}
+// Using shared types from ../types
 
 // Zod schema for validation (extensible for future versions)
 const deckButtonSchema = z.object({
@@ -46,7 +20,8 @@ const deckButtonSchema = z.object({
   color: z.string().optional(),
   confirm: z.boolean().optional(),
   timeoutMs: z.number().nonnegative().optional(),
-  readonly: z.boolean().optional()
+  readonly: z.boolean().optional(),
+  notifyOn: z.enum(['off','fail','always']).optional()
 });
 
 const deckProfileSchema = z.object({
@@ -135,11 +110,18 @@ function normalizePath(p: string) {
 }
 
 async function createWindow() {
+  // In dev the watcher produces preload.js (no .cjs copy). In production build we copy to preload.cjs.
+  // Choose whichever exists so hot reload gets the newest preload.
+  const preloadPath = (() => {
+    const cjs = join(__dirname, 'preload.cjs');
+    const js = join(__dirname, 'preload.js');
+    return existsSync(cjs) ? cjs : js;
+  })();
   mainWindow = new BrowserWindow({
     width: 900,
     height: 600,
     webPreferences: {
-      preload: join(__dirname, 'preload.cjs'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -155,7 +137,25 @@ async function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
+let currentMode: TDMode = 'native';
+
+async function initializeApp() {
+  const envResult = await detectEnvironment();
+  currentMode = envResult.mode;
+  
+  console.log(`[TermDeck] Mode: ${currentMode}`);
+  console.log(`[TermDeck] Environment:`, envResult.suggestions);
+
+  if (currentMode === 'server') {
+    // This should not happen in Electron context
+    console.error('[TermDeck] Server mode detected in Electron app - this is unexpected');
+    // Could start API server here if needed
+  }
+
+  await createWindow();
+}
+
+app.whenReady().then(initializeApp);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -169,6 +169,10 @@ app.on('activate', () => {
 let state = ensureConfig();
 // Track running processes to allow stop
 const runningChildren: Record<string, import('child_process').ChildProcess> = {};
+const runStartTimes: Record<string, number> = {};
+const timedOut: Record<string, boolean> = {};
+// Track if a button currently has an open prompt to avoid spamming multiple modals for same logical ask
+const activePromptsPerButton: Record<string, boolean> = {};
 
 // Heuristic dangerous patterns
 const DANGEROUS_RGX = /(rm\s+-rf\s+\/(?!\S)|rm\s+-rf\s+\.|git\s+push\s+--force|docker\s+(system|container|image)\s+prune)/i;
@@ -267,7 +271,8 @@ ipcMain.handle('deck:addButton', (_evt, profileId: string, button: Partial<DeckB
     color: button.color || '#222',
     confirm: !!button.confirm,
     timeoutMs: button.timeoutMs || 0,
-    readonly: !!button.readonly
+    readonly: !!button.readonly,
+    notifyOn: (button.notifyOn as any) || 'off'
   };
   profile.buttons.push(full);
   saveConfig(state);
@@ -281,6 +286,7 @@ ipcMain.handle('deck:updateButton', (_evt, profileId: string, buttonId: string, 
   if (idx === -1) throw new Error('Button not found');
   const current = profile.buttons[idx];
   const updated = { ...current, ...patch, id: current.id };
+  if (!updated.notifyOn) updated.notifyOn = 'off';
   profile.buttons[idx] = updated;
   saveConfig(state);
   return updated;
@@ -336,19 +342,87 @@ ipcMain.handle('deck:run', async (evt, buttonId: string) => {
   }
 
   runningChildren[button.id] = child;
+  runStartTimes[button.id] = Date.now();
+  delete timedOut[button.id];
 
   const channel = `deck:run:stream:${button.id}`;
   if (child.stdout) child.stdout.on('data', d => evt.sender.send(channel, { type: 'stdout', data: d.toString() }));
   if (child.stderr) child.stderr.on('data', d => evt.sender.send(channel, { type: 'stderr', data: d.toString() }));
+
+  // Basic interactive prompt detection (MVP): looks for common password/input prompts at end of chunk
+  function scanForPrompt(chunk: string) {
+    // Only trigger if we still have button context and process alive and not already showing a prompt
+    if (!button) return;
+    if (!runningChildren[button.id] || activePromptsPerButton[button.id]) return;
+    const trimmed = chunk.trimEnd();
+    // Patterns: password:, enter password:, passphrase, (y/n)? style can be extended later
+    const passwordRgx = /(enter\s+password[: ]*$|password[: ]*$|passphrase[: ]*$)/i;
+    const inputRgx = /(enter\s+.+[:?]$|continue\?\s*\(y\/n\)[: ]*$|overwrite file\? \(y\/n\)[: ]*$)/i;
+    let matchType: 'password' | 'input' | null = null;
+    if (passwordRgx.test(trimmed)) matchType = 'password';
+    else if (inputRgx.test(trimmed)) matchType = 'input';
+    if (matchType) {
+      activePromptsPerButton[button.id] = true;
+      evt.sender.send('deck:prompt', {
+        buttonId: button.id,
+        buttonLabel: button.label,
+        type: matchType,
+        text: trimmed
+      });
+    }
+  }
+  if (child.stdout) child.stdout.on('data', d => {
+    try { scanForPrompt(d.toString()); } catch {/* ignore */}
+  });
+  if (child.stderr) child.stderr.on('data', d => {
+    try { scanForPrompt(d.toString()); } catch {/* ignore */}
+  });
   child.on('close', code => {
     evt.sender.send(channel, { type: 'close', code });
     delete runningChildren[button.id];
+    delete activePromptsPerButton[button.id];
+    // Notifications (after process exit)
+    try {
+      const durationMs = runStartTimes[button.id] ? Date.now() - runStartTimes[button.id] : 0;
+      delete runStartTimes[button.id];
+      const notifyPolicy = button.notifyOn || 'off';
+      const failed = timedOut[button.id] || (typeof code === 'number' && code !== 0);
+      const shouldNotify = notifyPolicy === 'always' || (notifyPolicy === 'fail' && failed);
+      if (shouldNotify) {
+        const locale = state.locale || 'en';
+        const seconds = (durationMs/1000).toFixed(1);
+        let title: string; let body: string;
+        if (locale.startsWith('pt')) {
+          title = failed ? `Falhou: ${button.label}` : `Concluído: ${button.label}`;
+          if (timedOut[button.id]) body = `Timeout após ${(button.timeoutMs||0)}ms`; else body = failed ? `Exit code ${code} • ${seconds}s` : `${seconds}s`;
+        } else {
+          title = failed ? `Failed: ${button.label}` : `Done: ${button.label}`;
+          if (timedOut[button.id]) body = `Timeout after ${(button.timeoutMs||0)}ms`; else body = failed ? `Exit code ${code} • ${seconds}s` : `${seconds}s`;
+        }
+        delete timedOut[button.id];
+        let shownNative = false;
+        try {
+          if (Notification.isSupported()) {
+            const n = new Notification({ title, body, silent: !failed });
+            n.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
+            n.show();
+            shownNative = true;
+          }
+        } catch {/* ignore */}
+        if (!shownNative) {
+          // Fallback: emit IPC so renderer can show in-app toast
+          try { evt.sender.send('deck:notify-fallback', { buttonId: button.id, label: button.label, title, body, failed }); } catch {/* ignore */}
+        }
+      }
+    } catch {/* ignore */}
+    delete timedOut[button.id];
   });
   if (button.timeoutMs && button.timeoutMs > 0) {
     setTimeout(() => {
       if (!child.killed) {
         child.kill('SIGTERM');
         evt.sender.send(channel, { type: 'timeout' });
+        timedOut[button.id] = true;
       }
     }, button.timeoutMs);
   }
@@ -360,6 +434,7 @@ ipcMain.handle('deck:stop', (_evt, buttonId: string) => {
   if (child && !child.killed) {
     child.kill('SIGTERM');
     delete runningChildren[buttonId];
+    delete activePromptsPerButton[buttonId];
     return { stopped: true };
   }
   return { stopped: false };
@@ -377,4 +452,24 @@ ipcMain.handle('deck:setLocale', (_evt, locale: string) => {
   state.locale = locale;
   saveConfig(state);
   return { locale: state.locale };
+});
+
+// Get current app mode
+ipcMain.handle('deck:getMode', () => {
+  return { mode: currentMode };
+});
+
+// Receive user-provided input for an interactive prompt
+ipcMain.handle('deck:sendInput', (_evt, buttonId: string, value: string) => {
+  const child = runningChildren[buttonId];
+  if (!child) return { sent: false, reason: 'not-running' };
+  if (!child.stdin) return { sent: false, reason: 'no-stdin' };
+  try {
+    child.stdin.write(value + '\n');
+    // Allow future prompts again after sending
+    delete activePromptsPerButton[buttonId];
+    return { sent: true };
+  } catch (e: any) {
+    return { sent: false, error: e?.message };
+  }
 });

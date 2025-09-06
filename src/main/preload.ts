@@ -20,6 +20,18 @@ contextBridge.exposeInMainWorld('termdeck', {
   ,deleteProfile: (profileId: string) => ipcRenderer.invoke('deck:deleteProfile', profileId)
   ,setConcurrencyPolicy: (policy: string) => ipcRenderer.invoke('deck:setConcurrencyPolicy', policy)
   ,setLocale: (locale: string) => ipcRenderer.invoke('deck:setLocale', locale)
+  ,sendInput: (buttonId: string, value: string) => ipcRenderer.invoke('deck:sendInput', buttonId, value)
+  ,onPrompt: (handler: (p: { buttonId: string; buttonLabel: string; type: 'input' | 'password'; text: string }) => void) => {
+    const h = (_e: any, payload: any) => handler(payload);
+    ipcRenderer.on('deck:prompt', h);
+    return () => ipcRenderer.removeListener('deck:prompt', h);
+  }
+  ,onNotifyFallback: (handler: (n: { buttonId: string; label: string; title: string; body: string; failed: boolean }) => void) => {
+    const h = (_e: any, payload: any) => handler(payload);
+    ipcRenderer.on('deck:notify-fallback', h);
+    return () => ipcRenderer.removeListener('deck:notify-fallback', h);
+  }
+  ,getMode: () => ipcRenderer.invoke('deck:getMode')
 });
 
 declare global {
@@ -38,6 +50,10 @@ declare global {
   deleteProfile: (profileId: string) => Promise<any>;
   setConcurrencyPolicy: (policy: 'parallel' | 'single-per-button' | 'single-global') => Promise<any>;
   setLocale: (locale: string) => Promise<any>;
+      sendInput: (buttonId: string, value: string) => Promise<{ sent: boolean; error?: string; reason?: string }>;
+      onPrompt: (handler: (p: { buttonId: string; buttonLabel: string; type: 'input' | 'password'; text: string }) => void) => () => void;
+      onNotifyFallback: (handler: (n: { buttonId: string; label: string; title: string; body: string; failed: boolean }) => void) => () => void;
+      getMode: () => Promise<{ mode: string }>;
     }
   }
 }
