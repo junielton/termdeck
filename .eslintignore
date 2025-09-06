@@ -1,0 +1,7 @@
+# ESLint ignore
+node_modules/
+dist/
+dist/
+.vite/
+.cache/
+*.min.js

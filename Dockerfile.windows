@@ -1,0 +1,20 @@
+FROM node:20-windowsservercore-ltsc2022
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source
+COPY . .
+
+# Build
+RUN npm run build:renderer && npm run build:main && npm run build:utils
+
+# Package for Windows
+RUN npx electron-builder --win
+
+CMD ["powershell"]

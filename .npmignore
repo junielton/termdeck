@@ -1,0 +1,22 @@
+# Files to exclude from npm package
+src/
+tests/
+.vscode/
+.idea/
+*.ts
+*.map
+.vite/
+.cache/
+.node_repl_history
+.DS_Store
+.env
+.gitignore
+Dockerfile
+*.dockerfile
+dev-scripts/
+
+# exclude large build artefacts not needed in package
+coverage/
+*.tgz
+
+# include files listed explicitly in package.json 'files' if present

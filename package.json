@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Stream Deck-like command launcher for terminal contexts (Electron + Vue)",
   "license": "MIT",
+  "author": "CodeSant",
   "main": "dist/main/main.js",
   "bin": {
     "termdeck": "bin/termdeck.js"
@@ -36,7 +37,6 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "cors": "^2.8.5",
-    "electron": "^30.0.0",
     "express": "^5.1.0",
     "lucide-vue-next": "^0.460.0",
     "socket.io": "^4.8.1",
@@ -56,6 +56,8 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0.3",
+    "electron": "^30.0.0",
+    "electron-builder": "^26.0.12",
     "eslint": "^8.57.0",
     "eslint-plugin-vue": "^9.21.1",
     "postcss": "^8.4.41",
@@ -64,5 +66,33 @@
     "typescript": "^5.4.0",
     "vite": "^5.2.0",
     "vitest": "^1.5.0"
+  },
+  "build": {
+    "appId": "com.codesant.termdeck",
+    "productName": "termdeck",
+    "files": [
+      "dist/**",
+      "bin/**",
+      "README.md",
+      "LICENSE"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    }
   }
 }
