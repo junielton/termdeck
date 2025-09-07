@@ -102,6 +102,7 @@ Thumbs.db
 build/
 out/
 dist/
+squashfs-root/
 
 # Database filesls
 *.sqlite
