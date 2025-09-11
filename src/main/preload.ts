@@ -13,6 +13,13 @@ contextBridge.exposeInMainWorld('termdeck', {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.removeListener(channel, handler);
   },
+  runWithParams: (buttonId: string, params: Record<string, string>, listener: (msg: any) => void) => {
+    ipcRenderer.invoke('deck:runWithParams', buttonId, params);
+    const channel = `deck:run:stream:${buttonId}`;
+    const handler = (_event: any, data: any) => listener(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
   stop: (buttonId: string) => ipcRenderer.invoke('deck:stop', buttonId)
   ,createProfile: (data: any) => ipcRenderer.invoke('deck:createProfile', data)
   ,setActiveProfile: (profileId: string) => ipcRenderer.invoke('deck:setActiveProfile', profileId)
@@ -43,6 +50,7 @@ declare global {
   removeButton: (profileId: string, buttonId: string) => Promise<any>;
   updateProfile: (profile: any) => Promise<any>;
       run: (buttonId: string, listener: (msg: any) => void) => () => void;
+  runWithParams: (buttonId: string, params: Record<string,string>, listener: (msg: any) => void) => () => void;
   stop: (buttonId: string) => Promise<any>;
   createProfile: (data: { name?: string; rows?: number; cols?: number }) => Promise<any>;
   setActiveProfile: (profileId: string) => Promise<any>;

@@ -14,6 +14,22 @@ if (!fs.existsSync(electronBin)) {
 	process.exit(1);
 }
 
+// Preflight: ensure package.json main exists to avoid Electron generic error
+try {
+	const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
+	const mainRel = pkg && pkg.main ? String(pkg.main) : 'dist/main/main.js';
+	const mainAbs = path.join(appRoot, mainRel);
+	if (!fs.existsSync(mainAbs)) {
+		console.error('[termdeck] Build artifact missing:', mainAbs);
+		console.error('[termdeck] Please run one of the following and try again:');
+		console.error('  - npm run build');
+		console.error('  - ./scripts/dev-link.sh');
+		process.exit(1);
+	}
+} catch (e) {
+	// Continue and let Electron handle if something weird happens
+}
+
 const isWsl = (() => {
 	if (process.platform !== 'linux') return false;
 	try { return /microsoft/i.test(fs.readFileSync('/proc/version', 'utf8')); } catch { return false; }

@@ -23,12 +23,11 @@ Stream Deck-like command launcher for terminal contexts. A modern Electron appli
 - **📜 Command History**: Buffer controls and auto-scroll for log management
 
 ### Cross-Platform Architecture
-- **🖥️ Native Mode**: Standard Electron app for local terminal commands
+- **🖥️ Native Mode**: Electron app launched via npm (global install)
 - **🔗 Client-Server Mode**: WSL/Windows split architecture (like VS Code)
-  - Electron client runs on Windows
-  - API server runs in WSL for Linux command execution
-  - Automatic environment detection and server management
-- **🔧 Server Mode**: Standalone API server for headless operation
+  - Electron client on Windows; optional API server in WSL
+  - Automatic environment detection
+  
 
 ### Script Management (Planned)
 - **📜 Script Library**: Save and organize reusable command scripts
@@ -38,10 +37,10 @@ Stream Deck-like command launcher for terminal contexts. A modern Electron appli
 
 ## 🚀 Installation
 
-### Global Installation
+### Global Installation (npm-only)
 ```bash
 npm install -g termdeck
-termdeck
+termdeck   # ou 'tdk' se você rodou scripts/dev-link.sh no dev local
 ```
 
 ### Local Development
@@ -225,16 +224,13 @@ npm run lint
 npm run typecheck
 ```
 
-## 📦 Building
+## 📦 Build
 
 ```bash
-# Development build
+# Build completo (dev/prod)
 npm run build
 
-# Production build with optimization
-npm run build:all
-
-# Build specific components
+# Builds específicos
 npm run build:main      # Main process
 npm run build:renderer  # Vue frontend
 npm run build:utils     # Utilities and server
@@ -269,10 +265,7 @@ npm run build:utils     # Utilities and server
 - [ ] **Performance Monitoring**: Command execution analytics
 
 ### Platform Support
-- [ ] **macOS**: Native macOS application
-- [ ] **Linux Native**: Direct Linux Electron app
-- [ ] **Docker**: Containerized server mode
-- [ ] **Remote SSH**: Execute commands on remote servers
+- Global npm install on macOS, Linux e Windows
 
 ## 📄 License
 

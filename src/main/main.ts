@@ -21,7 +21,15 @@ const deckButtonSchema = z.object({
   confirm: z.boolean().optional(),
   timeoutMs: z.number().nonnegative().optional(),
   readonly: z.boolean().optional(),
-  notifyOn: z.enum(['off','fail','always']).optional()
+  notifyOn: z.enum(['off','fail','always']).optional(),
+  parameters: z.array(z.object({
+    name: z.string(),
+    label: z.string().optional(),
+    type: z.enum(['text','password','select']).optional().default('text'),
+    options: z.array(z.string()).optional(),
+    required: z.boolean().optional(),
+    defaultValue: z.string().optional()
+  })).optional()
 });
 
 const deckProfileSchema = z.object({
@@ -138,6 +146,27 @@ async function createWindow() {
 }
 
 let currentMode: TDMode = 'native';
+
+// Simple shell-escape for safe substitution
+function shellEscape(value: string): string {
+  if (process.platform === 'win32') {
+    // For cmd.exe: wrap in double quotes and escape internal quotes by doubling them
+    // This is not perfect for PowerShell, but our spawn uses shell:true (cmd) on win.
+    return '"' + String(value).replace(/"/g, '""') + '"';
+  }
+  // For POSIX shells: wrap in single quotes and escape single quotes safely
+  if (value === '') return "''";
+  return `'` + String(value).replace(/'/g, `'"'"'`) + `'`;
+}
+
+function expandParams(cmd: string, params: Record<string, string>): string {
+  let out = cmd;
+  for (const [key, val] of Object.entries(params || {})) {
+    const rgx = new RegExp(`\\$\\{${key}\\}`, 'g');
+    out = out.replace(rgx, shellEscape(val));
+  }
+  return out;
+}
 
 async function initializeApp() {
   const envResult = await detectEnvironment();
@@ -415,6 +444,119 @@ ipcMain.handle('deck:run', async (evt, buttonId: string) => {
         }
       }
     } catch {/* ignore */}
+    delete timedOut[button.id];
+  });
+  if (button.timeoutMs && button.timeoutMs > 0) {
+    setTimeout(() => {
+      if (!child.killed) {
+        child.kill('SIGTERM');
+        evt.sender.send(channel, { type: 'timeout' });
+        timedOut[button.id] = true;
+      }
+    }, button.timeoutMs);
+  }
+  return { pid: child.pid };
+});
+
+// Run command with pre-collected parameters replacing ${name} placeholders
+ipcMain.handle('deck:runWithParams', async (evt, buttonId: string, params: Record<string, string>) => {
+  const profile = state.profiles.find(p => p.id === state.activeProfileId);
+  if (!profile) throw new Error('Active profile not found');
+  const button = profile.buttons.find(b => b.id === buttonId);
+  if (!button) throw new Error('Button not found');
+
+  // concurrency enforcement
+  const policy = state.concurrencyPolicy || 'single-per-button';
+  if (policy === 'single-global' && Object.keys(runningChildren).length > 0) {
+    return { busy: 'global' };
+  }
+  if (policy === 'single-per-button' && runningChildren[button.id]) {
+    return { busy: 'button' };
+  }
+
+  // Confirmation (same heuristic)
+  if (button.confirm || DANGEROUS_RGX.test(button.command)) {
+    const res = dialog.showMessageBoxSync({
+      type: 'warning',
+      message: 'Confirmar execução?',
+      detail: expandParams(button.command, params),
+      buttons: ['Cancelar', 'Executar'],
+      defaultId: 1,
+      cancelId: 0
+    });
+    if (res !== 1) return { aborted: true };
+  }
+
+  const finalCommand = expandParams(button.command, params);
+
+  let child: import('child_process').ChildProcess;
+  if (process.platform === 'win32') {
+    child = spawn(finalCommand, { cwd: button.cwd, shell: true, env: process.env });
+  } else {
+    const env = { ...process.env, PS1: '', TERMDECK: '1' };
+    child = spawn(USER_SHELL, ['-i', '-c', finalCommand], { cwd: button.cwd, env });
+  }
+
+  runningChildren[button.id] = child;
+  runStartTimes[button.id] = Date.now();
+  delete timedOut[button.id];
+
+  const channel = `deck:run:stream:${button.id}`;
+  if (child.stdout) child.stdout.on('data', d => evt.sender.send(channel, { type: 'stdout', data: d.toString() }));
+  if (child.stderr) child.stderr.on('data', d => evt.sender.send(channel, { type: 'stderr', data: d.toString() }));
+
+  function scanForPrompt(chunk: string) {
+    if (!button) return;
+    if (!runningChildren[button.id] || activePromptsPerButton[button.id]) return;
+    const trimmed = chunk.trimEnd();
+    const passwordRgx = /(enter\s+password[: ]*$|password[: ]*$|passphrase[: ]*$)/i;
+    const inputRgx = /(enter\s+.+[:?]$|continue\?\s*\(y\/n\)[: ]*$|overwrite file\? \(y\/n\)[: ]*$)/i;
+    let matchType: 'password' | 'input' | null = null;
+    if (passwordRgx.test(trimmed)) matchType = 'password';
+    else if (inputRgx.test(trimmed)) matchType = 'input';
+    if (matchType) {
+      activePromptsPerButton[button.id] = true;
+      evt.sender.send('deck:prompt', { buttonId: button.id, buttonLabel: button.label, type: matchType, text: trimmed });
+    }
+  }
+  if (child.stdout) child.stdout.on('data', d => { try { scanForPrompt(d.toString()); } catch {} });
+  if (child.stderr) child.stderr.on('data', d => { try { scanForPrompt(d.toString()); } catch {} });
+  child.on('close', code => {
+    evt.sender.send(channel, { type: 'close', code });
+    delete runningChildren[button.id];
+    delete activePromptsPerButton[button.id];
+    try {
+      const durationMs = runStartTimes[button.id] ? Date.now() - runStartTimes[button.id] : 0;
+      delete runStartTimes[button.id];
+      const notifyPolicy = button.notifyOn || 'off';
+      const failed = timedOut[button.id] || (typeof code === 'number' && code !== 0);
+      const shouldNotify = notifyPolicy === 'always' || (notifyPolicy === 'fail' && failed);
+      if (shouldNotify) {
+        const locale = state.locale || 'en';
+        const seconds = (durationMs/1000).toFixed(1);
+        let title: string; let body: string;
+        if (locale.startsWith('pt')) {
+          title = failed ? `Falhou: ${button.label}` : `Concluído: ${button.label}`;
+          if (timedOut[button.id]) body = `Timeout após ${(button.timeoutMs||0)}ms`; else body = failed ? `Exit code ${code} • ${seconds}s` : `${seconds}s`;
+        } else {
+          title = failed ? `Failed: ${button.label}` : `Done: ${button.label}`;
+          if (timedOut[button.id]) body = `Timeout after ${(button.timeoutMs||0)}ms`; else body = failed ? `Exit code ${code} • ${seconds}s` : `${seconds}s`;
+        }
+        delete timedOut[button.id];
+        let shownNative = false;
+        try {
+          if (Notification.isSupported()) {
+            const n = new Notification({ title, body, silent: !failed });
+            n.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
+            n.show();
+            shownNative = true;
+          }
+        } catch {}
+        if (!shownNative) {
+          try { evt.sender.send('deck:notify-fallback', { buttonId: button.id, label: button.label, title, body, failed }); } catch {}
+        }
+      }
+    } catch {}
     delete timedOut[button.id];
   });
   if (button.timeoutMs && button.timeoutMs > 0) {

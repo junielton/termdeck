@@ -308,6 +308,36 @@
         </div>
       </div>
     </div>
+    <!-- Parameters Modal -->
+    <div v-if="paramModal.open" class="fixed inset-0 flex items-center justify-center bg-black/70 z-[70]">
+      <div class="bg-neutral-900/95 border border-neutral-700 rounded-xl p-5 w-full max-w-md space-y-4 shadow-2xl backdrop-blur">
+        <h2 class="text-sm font-semibold flex items-center gap-2">
+          <span class="px-2 py-[2px] rounded bg-emerald-600/40 text-emerald-200 text-[10px] uppercase tracking-wide">Run with parameters</span>
+          <span class="truncate" :title="paramModal.button?.label">{{ paramModal.button?.label }}</span>
+        </h2>
+        <div class="space-y-3 max-h-72 overflow-auto pr-1">
+          <div v-for="(f,idx) in paramModal.fields" :key="f.name+idx" class="space-y-1">
+            <label class="block text-[11px] uppercase tracking-wide text-neutral-400">{{ f.label || f.name }} <span v-if="f.required" class="text-red-400">*</span></label>
+            <input v-if="f.type==='text' || f.type==='password'" :type="f.type==='password' ? 'password':'text'" v-model="f.value" class="w-full px-2 py-1 rounded bg-neutral-800 border border-neutral-600 focus:outline-none focus:border-blue-500" />
+            <select v-else-if="f.type==='select'" v-model="f.value" class="w-full px-2 py-1 rounded bg-neutral-800 border border-neutral-600 focus:outline-none focus:border-blue-500">
+              <option v-for="opt in (f.options||[])" :key="String(opt)" :value="String(opt)">{{ String(opt) }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="text-[11px] text-neutral-400">
+          <div class="opacity-70">Preview</div>
+          <div class="mt-1 font-mono whitespace-pre-wrap break-all bg-neutral-800/60 rounded p-2">{{ paramPreview }}</div>
+        </div>
+        <div class="flex justify-between items-center text-[11px] text-neutral-500">
+          <span v-if="paramModal.error" class="text-red-400">{{ paramModal.error }}</span>
+          <span class="ml-auto" v-if="paramModal.submitting">{{ t('actions.saving') }}...</span>
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <button class="btn-secondary" @click="closeParamModal" :disabled="paramModal.submitting">{{ t('actions.cancel') }}</button>
+          <button class="btn-primary" @click="submitParams" :disabled="paramModal.submitting">Run</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -583,6 +613,12 @@ function deleteProfile() {
 }
 
 function run(btn: any) {
+  // If command contains ${...} placeholders or has parameters schema, open parameters modal
+  const placeholders = detectPlaceholders(btn.command);
+  if ((placeholders.length > 0) || (btn.parameters && btn.parameters.length)) {
+    openParamModal(btn, placeholders);
+    return;
+  }
   if (!logs.value[btn.id]) logs.value[btn.id] = [];
   if (selectedButtonId.value === btn.id) buttonLogTimestamps.value = buttonLogTimestamps.value || [];
   selectedButtonId.value = btn.id;
@@ -845,6 +881,139 @@ function badgeStyle(buttonId: string) {
 
 function updatePolicy() {
   window.termdeck.setConcurrencyPolicy(concurrencyPolicy.value);
+}
+
+// --- Parameters support ---
+const paramModal = ref<{ open: boolean; button: any | null; fields: Array<{ name: string; label: string; type: 'text'|'password'|'select'; options?: string[]; required?: boolean; value: string }>; submitting: boolean; error: string | null }>({
+  open: false,
+  button: null,
+  fields: [],
+  submitting: false,
+  error: null
+});
+
+function detectPlaceholders(cmd: string): string[] {
+  const names = new Set<string>();
+  const re = /\$\{([a-zA-Z0-9_.-]+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cmd))) names.add(m[1]);
+  return Array.from(names);
+}
+
+function openParamModal(btn: any, placeholders?: string[]) {
+  const fields: Array<{ name: string; label: string; type: 'text'|'password'|'select'; options?: string[]; required?: boolean; value: string }> = [];
+  if (Array.isArray(btn.parameters) && btn.parameters.length) {
+    for (const p of btn.parameters) {
+      fields.push({ name: p.name, label: p.label || p.name, type: p.type || 'text', options: p.options || [], required: !!p.required, value: p.defaultValue || '' });
+    }
+  } else {
+    // Build from placeholders with generic text type
+    const names = placeholders && placeholders.length ? placeholders : detectPlaceholders(btn.command);
+    for (const name of names) fields.push({ name, label: name, type: 'text', required: false, value: '' });
+  }
+  paramModal.value = { open: true, button: btn, fields, submitting: false, error: null };
+}
+
+const paramPreview = computed(() => {
+  const btn = paramModal.value.button; if (!btn) return '';
+  let c = String(btn.command || '');
+  for (const f of paramModal.value.fields) {
+    const rgx = new RegExp(`\\$\\{${f.name}\\}`, 'g');
+    c = c.replace(rgx, f.value ?? '');
+  }
+  return c;
+});
+
+function closeParamModal() { paramModal.value.open = false; paramModal.value.button = null; }
+
+function validateParams(): string | null {
+  for (const f of paramModal.value.fields) {
+    if (f.required && (!f.value || !String(f.value).trim())) {
+      return `${f.label || f.name} is required`;
+    }
+  }
+  return null;
+}
+
+function startRunWithListener(btn: any, subscribe: (listener: (m: any) => void) => () => void) {
+  if (!logs.value[btn.id]) logs.value[btn.id] = [];
+  if (selectedButtonId.value === btn.id) buttonLogTimestamps.value = buttonLogTimestamps.value || [];
+  selectedButtonId.value = btn.id;
+  // Front-end guard
+  if (concurrencyPolicy.value === 'single-global' && Object.values(running.value).some(v => v)) {
+    logs.value[btn.id].push(t('concurrencyMsg.blocked'));
+    return;
+  }
+  if (concurrencyPolicy.value === 'single-per-button' && running.value[btn.id]) {
+    logs.value[btn.id].push(t('concurrencyMsg.blocked'));
+    return;
+  }
+  running.value[btn.id] = true;
+  if (runSubscriptions[btn.id]) { runSubscriptions[btn.id]!(); delete runSubscriptions[btn.id]; }
+  const unsubscribe = subscribe((m: RunMessage | any) => {
+    if (!logs.value[btn.id]) logs.value[btn.id] = [];
+    const label = btn.label;
+    const pushGlobal = (line: string, kind: string) => {
+      globalLogs.value.push({ id: ++globalLogSeq, ts: Date.now(), buttonId: btn.id, buttonLabel: label, line, kind });
+      if (globalLogs.value.length > GLOBAL_LOG_LIMIT) {
+        globalLogs.value.splice(0, globalLogs.value.length - GLOBAL_LOG_LIMIT);
+      }
+    };
+    if (m.busy) {
+      const line = t('concurrencyMsg.blocked');
+      logs.value[btn.id].push(line);
+      pushGlobal(line, 'meta');
+      running.value[btn.id] = false;
+      unsubscribe(); delete runSubscriptions[btn.id];
+      return;
+    }
+    if (m.type === 'stdout' || m.type === 'stderr') {
+      const text = m.data || '';
+      logs.value[btn.id].push(text);
+      if (selectedButtonId.value === btn.id) buttonLogTimestamps.value.push(Date.now());
+      pushGlobal(text, m.type);
+    }
+    if (m.type === 'close') {
+      const line = `Exited with code ${m.code}`;
+      logs.value[btn.id].push(line);
+      if (selectedButtonId.value === btn.id) buttonLogTimestamps.value.push(Date.now());
+      pushGlobal(line, 'meta');
+      running.value[btn.id] = false;
+      unsubscribe(); delete runSubscriptions[btn.id];
+    }
+    if (m.type === 'timeout') {
+      const line = 'Timed out';
+      logs.value[btn.id].push(line);
+      if (selectedButtonId.value === btn.id) buttonLogTimestamps.value.push(Date.now());
+      pushGlobal(line, 'meta');
+      running.value[btn.id] = false;
+      unsubscribe(); delete runSubscriptions[btn.id];
+    }
+    const limit = LOG_LIMIT.value;
+    if (logs.value[btn.id].length > limit) {
+      const overflow = logs.value[btn.id].length - limit;
+      logs.value[btn.id].splice(0, overflow);
+      if (selectedButtonId.value === btn.id) buttonLogTimestamps.value.splice(0, overflow);
+    }
+  });
+  runSubscriptions[btn.id] = unsubscribe;
+}
+
+async function submitParams() {
+  const err = validateParams();
+  if (err) { paramModal.value.error = err; return; }
+  if (!paramModal.value.button) return;
+  const btn = paramModal.value.button;
+  const params: Record<string, string> = {};
+  for (const f of paramModal.value.fields) params[f.name] = f.value || '';
+  paramModal.value.submitting = true; paramModal.value.error = null;
+  try {
+    closeParamModal();
+    startRunWithListener(btn, (listener) => (window as any).termdeck.runWithParams(btn.id, params, listener));
+  } catch (e:any) {
+    paramModal.value.error = e?.message || 'Failed';
+    paramModal.value.submitting = false;
+  }
 }
 
 // --- ANSI color support ---
