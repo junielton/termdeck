@@ -6,11 +6,35 @@ const path = require('path');
 const fs = require('fs');
 
 const appRoot = path.resolve(__dirname, '..');
-const electronBin = path.join(appRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron');
 
-if (!fs.existsSync(electronBin)) {
-	console.error('[termdeck] Electron binary not found at', electronBin);
+// Resolve Electron executable robustly across platforms.
+// - On Windows prefer native electron.exe to avoid spawning the .cmd shim (can cause EINVAL)
+// - Allow override via TERMDECK_ELECTRON to point to a custom electron binary
+function resolveElectronBinary() {
+	const override = process.env.TERMDECK_ELECTRON && String(process.env.TERMDECK_ELECTRON).trim();
+	if (override && fs.existsSync(override)) return override;
+
+	if (process.platform === 'win32') {
+		const exe = path.join(appRoot, 'node_modules', 'electron', 'dist', 'electron.exe');
+		if (fs.existsSync(exe)) return exe;
+		// Fallback to .cmd if exe not found
+		const cmd = path.join(appRoot, 'node_modules', '.bin', 'electron.cmd');
+		if (fs.existsSync(cmd)) return cmd;
+	} else {
+		const bin = path.join(appRoot, 'node_modules', '.bin', 'electron');
+		if (fs.existsSync(bin)) return bin;
+		// Fallback to package's dist binary if available
+		const posixDist = path.join(appRoot, 'node_modules', 'electron', 'dist', 'electron');
+		if (fs.existsSync(posixDist)) return posixDist;
+	}
+	return null;
+}
+
+const electronBin = resolveElectronBinary();
+if (!electronBin) {
+	console.error('[termdeck] Electron binary not found. Looked under node_modules/.bin and electron/dist.');
 	console.error('[termdeck] Try reinstalling dependencies: npm install (inside the termdeck project).');
+	console.error('[termdeck] Or set TERMDECK_ELECTRON to a valid electron executable path.');
 	process.exit(1);
 }
 
@@ -41,10 +65,16 @@ if (isWsl) args.push('--no-sandbox');
 // Point Electron to package root so it loads our package.json main field regardless of user CWD.
 args.push(appRoot);
 
-const child = spawn(electronBin, args, { stdio: 'inherit', env: { ...process.env } });
+// On Windows, prefer spawning electron.exe directly. If we only have electron.cmd, use a shell.
+const useShell = process.platform === 'win32' && /\.cmd$/i.test(electronBin);
+const child = spawn(electronBin, args, { stdio: 'inherit', env: { ...process.env }, shell: useShell, windowsHide: false });
 
 child.on('error', (err) => {
 	console.error('[termdeck] Failed to launch Electron:', err.message);
+	if (process.platform === 'win32') {
+		console.error('[termdeck] Hint: On Windows, spawning electron.cmd can fail. Prefer electron.exe under node_modules/electron/dist/.');
+		console.error('[termdeck] You can set TERMDECK_ELECTRON to the full path of electron.exe as a workaround.');
+	}
 	process.exit(1);
 });
 
