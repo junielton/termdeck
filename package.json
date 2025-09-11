@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Stream Deck-like command launcher for terminal contexts (Electron + Vue)",
   "license": "MIT",
-  "author": "CodeSant",
+  "author": "Junielton",
   "main": "dist/main/main.js",
   "bin": {
     "termdeck": "bin/termdeck.js"
