@@ -1,6 +1,6 @@
 {
   "name": "termdeck",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Stream Deck-like command launcher for terminal contexts (Electron + Vue)",
   "license": "MIT",
   "author": "Junielton",
