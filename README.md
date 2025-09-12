@@ -26,7 +26,7 @@ termdeck
 From source (development):
 
 ```bash
-git clone <REPO_URL>
+git https://github.com/junielton/termdeck.git
 cd termdeck
 npm install
 npm run dev
