@@ -7,6 +7,12 @@ const fs = require('fs');
 
 const appRoot = path.resolve(__dirname, '..');
 
+function dbg(...args) {
+	if (process.env.TERMDECK_DEBUG) {
+		try { console.error('[termdeck:debug]', ...args); } catch {}
+	}
+}
+
 // Resolve Electron executable robustly across platforms.
 // - On Windows prefer native electron.exe to avoid spawning the .cmd shim (can cause EINVAL)
 // - Allow override via TERMDECK_ELECTRON to point to a custom electron binary
@@ -59,11 +65,43 @@ const isWsl = (() => {
 	try { return /microsoft/i.test(fs.readFileSync('/proc/version', 'utf8')); } catch { return false; }
 })();
 
+// Normalize app path for Windows when invoked from WSL contexts
+function normalizeAppPathForWin(p) {
+	try {
+		let out = p;
+		// Case 1: POSIX /mnt/c/... -> C:\...
+		const mnt = out.match(/^\/mnt\/([a-zA-Z])\/(.*)$/);
+		if (mnt) {
+			const drive = mnt[1].toUpperCase();
+			const rest = mnt[2].replace(/\//g, '\\');
+			return drive + ':\\' + rest;
+		}
+		// Case 2: \\wsl.localhost\\<distro>\\mnt\\c\\... -> C:\...
+		const unc = out.match(/^\\\\wsl\.localhost\\[^\\]+\\mnt\\([a-zA-Z])\\(.*)$/);
+		if (unc) {
+			const drive = unc[1].toUpperCase();
+			const rest = unc[2].replace(/\//g, '\\');
+			return drive + ':\\' + rest;
+		}
+		return out;
+	} catch {
+		return p;
+	}
+}
+
 const args = [];
 // WSL often needs --no-sandbox; harmless elsewhere if user sets manually, so only add when detected.
 if (isWsl) args.push('--no-sandbox');
 // Point Electron to package root so it loads our package.json main field regardless of user CWD.
-args.push(appRoot);
+let appPath = appRoot;
+if (process.platform === 'win32') {
+	const fixed = normalizeAppPathForWin(appRoot);
+	if (fixed !== appRoot) {
+		dbg('Normalized app path for Windows from', appRoot, 'to', fixed);
+		appPath = fixed;
+	}
+}
+args.push(appPath);
 
 // On Windows, prefer spawning electron.exe directly. If we only have electron.cmd, use a shell.
 const useShell = process.platform === 'win32' && /\.cmd$/i.test(electronBin);
